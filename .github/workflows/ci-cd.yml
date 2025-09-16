@@ -51,5 +51,5 @@ jobs:
             GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
 
         - name: Push the code to Google AppScripts
-          run: clasp.push
+          run: clasp push
     
