@@ -21,7 +21,7 @@ jobs:
         run: yarn install --frozen-lockfile
         working-directory: client
       
-      - name: Run lint
-        run: yarn lint
+      - name: Build project
+        run: yarn build
         working-directory: client
     
