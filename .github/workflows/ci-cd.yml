@@ -16,8 +16,10 @@ jobs:
         with:
           node-version: 20
           cache: yarn
+          cache-dependency-path: client/yarn.lock
       - name: Install dependencies
-        run: cd client ; yarn install --frozen-lockfile
+        run: yarn install --frozen-lockfile
+        working-directory: client
       
       - name: Run lint
         run: yarn lint
