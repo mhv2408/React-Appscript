@@ -1,0 +1,55 @@
+name: CI / CD pipeline
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+          cache-dependency-path: client/yarn.lock
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+        working-directory: client
+      
+      - name: Build project
+        run: yarn build
+        working-directory: client
+ 
+  deploy:
+    needs: build
+    if: github.event_name=='push' && github.ref=='refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+        - name: Checkout the code
+          uses: actions/checkout@v4
+
+        - name: Setup Node
+          uses: actions/setup-node@v4
+          with:
+            node-version: 20
+
+        - name: Install clasp
+          run: npm install -g @google/clasp
+       
+        - name: Login to clasp
+          run: |
+            echo "$GOOGLE_CREDENTIALS" > credentials.json
+            clasp login --creds credentials.json
+          env:
+            GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+        - name: Push the code to Google AppScripts
+          run: clasp push
+    

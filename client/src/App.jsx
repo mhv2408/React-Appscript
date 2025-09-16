@@ -1,10 +1,11 @@
 import QuickSearch from "./components/QuickSearch";
-import Sidebar from "./components/Sidebar";
+import TaskManager from "./components/TaskManager";
 
 function App() {
   return (
     <>
     <QuickSearch />
+    <TaskManager />
     </>
   );
 }
