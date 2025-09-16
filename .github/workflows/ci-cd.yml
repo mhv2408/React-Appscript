@@ -24,4 +24,24 @@ jobs:
       - name: Build project
         run: yarn build
         working-directory: client
+ 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+        - name: Checkout the code
+          uses: actions/checkout@v4
+
+        - name: Install clasp
+          run: npm install -g @google/clasp
+       
+        - name: Login to clasp
+          run: |
+            echo "$GOOGLE_CREDENTIALS" > credentials.json
+            clasp login --creds credentials.json
+          env:
+            GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+
+        - name: Push the code to Google AppScripts
+          run: clasp.push
     
