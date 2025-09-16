@@ -23,4 +23,5 @@ jobs:
       
       - name: Run lint
         run: yarn lint
+        working-directory: client
     
