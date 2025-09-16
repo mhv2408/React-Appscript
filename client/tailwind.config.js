@@ -1,5 +1,5 @@
 // tailwind.config.js
-/* eslint-env node */
+
 module.exports = {
   content: [
     './index.html',
