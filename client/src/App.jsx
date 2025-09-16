@@ -1,5 +1,4 @@
 import QuickSearch from "./components/QuickSearch";
-import Sidebar from "./components/Sidebar";
 
 function App() {
   return (
