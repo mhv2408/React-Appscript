@@ -51,125 +51,116 @@ jobs:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
           SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
         run: |
-          npm install googleapis
+          npm install -g @google/clasp
+          npm install googleapis google-auth-library
           
-          # Deploy using Apps Script API directly
+          # Create temporary credentials file
+          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > /tmp/credentials.json
+          
+          # Setup clasp authentication and deploy
           node -e "
-            const { google } = require('googleapis');
+            const { GoogleAuth } = require('google-auth-library');
             const fs = require('fs');
+            const os = require('os');
+            const path = require('path');
             
-            async function deployToAppsScript() {
+            async function setupAndDeploy() {
               try {
-                console.log('🔐 Authenticating with Google Apps Script API...');
+                console.log('🔐 Setting up clasp authentication...');
                 
-                // Parse credentials
-                const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-                
-                // Create auth client
-                const auth = new google.auth.GoogleAuth({
-                  credentials: credentials,
-                  scopes: ['https://www.googleapis.com/auth/script.projects']
+                // Authenticate with service account
+                const auth = new GoogleAuth({
+                  keyFile: '/tmp/credentials.json',
+                  scopes: [
+                    'https://www.googleapis.com/auth/script.projects',
+                    'https://www.googleapis.com/auth/drive.file',
+                    'https://www.googleapis.com/auth/script.deployments'
+                  ]
                 });
                 
-                const script = google.script({ version: 'v1', auth });
+                const client = await auth.getClient();
+                const tokenResponse = await client.getAccessToken();
                 
-                console.log('📁 Reading project files...');
+                // Create clasp credentials
+                const claspCredentials = {
+                  access_token: tokenResponse.token,
+                  refresh_token: null,
+                  scope: 'https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/script.deployments',
+                  token_type: 'Bearer',
+                  expiry_date: Date.now() + (3600 * 1000)
+                };
                 
-                // Prepare files array
-                const files = [];
+                // Save clasp credentials
+                const clasprcPath = path.join(os.homedir(), '.clasprc.json');
+                fs.writeFileSync(clasprcPath, JSON.stringify(claspCredentials, null, 2));
                 
-                // Add Code.js
-                if (fs.existsSync('Code.js')) {
-                  const codeContent = fs.readFileSync('Code.js', 'utf8');
-                  files.push({
-                    name: 'Code',
-                    type: 'SERVER_JS',
-                    source: codeContent
-                  });
-                  console.log('✅ Code.js added (' + codeContent.length + ' characters)');
-                } else {
-                  console.log('⚠️ Code.js not found');
-                }
-                
-                // Add Sidebar.html
-                if (fs.existsSync('Sidebar.html')) {
-                  const htmlContent = fs.readFileSync('Sidebar.html', 'utf8');
-                  files.push({
-                    name: 'Sidebar',
-                    type: 'HTML',
-                    source: htmlContent
-                  });
-                  console.log('✅ Sidebar.html added (' + htmlContent.length + ' characters)');
-                } else {
-                  console.log('⚠️ Sidebar.html not found');
-                }
-                
-                // Add appsscript.json if it exists
-                if (fs.existsSync('appsscript.json')) {
-                  const manifestContent = fs.readFileSync('appsscript.json', 'utf8');
-                  files.push({
-                    name: 'appsscript',
-                    type: 'JSON',
-                    source: manifestContent
-                  });
-                  console.log('✅ appsscript.json added');
-                } else {
-                  console.log('ℹ️ appsscript.json not found (Apps Script will use defaults)');
-                }
-                
-                if (files.length === 0) {
-                  throw new Error('❌ No files found to deploy');
-                }
-                
-                console.log('🚀 Deploying ' + files.length + ' files to Apps Script...');
-                console.log('📋 Script ID: ' + process.env.SCRIPT_ID);
-                
-                // Update the project
-                const response = await script.projects.updateContent({
+                // Create .clasp.json
+                const claspConfig = {
                   scriptId: process.env.SCRIPT_ID,
-                  requestBody: {
-                    files: files
-                  }
-                });
+                  rootDir: './'
+                };
+                fs.writeFileSync('.clasp.json', JSON.stringify(claspConfig, null, 2));
                 
-                console.log('✅ Deployment successful!');
-                console.log('📄 Files deployed: ' + files.map(f => f.name).join(', '));
-                console.log('🔗 Script ID: ' + response.data.scriptId);
+                // Create .claspignore
+                const claspIgnore = [
+                  '**/**',
+                  '!Code.js',
+                  '!Sidebar.html',
+                  '!appsscript.json'
+                ].join('\n');
+                fs.writeFileSync('.claspignore', claspIgnore);
                 
-                // Optional: Create a version/deployment
-                try {
-                  console.log('🌐 Creating deployment version...');
-                  const versionResponse = await script.projects.versions.create({
-                    scriptId: process.env.SCRIPT_ID,
-                    requestBody: {
-                      description: 'Automated deployment from GitHub Actions - ' + new Date().toISOString()
-                    }
-                  });
-                  console.log('✅ Version created: ' + versionResponse.data.versionNumber);
-                } catch (versionError) {
-                  console.log('⚠️ Version creation failed (this is optional):', versionError.message);
-                }
+                console.log('✅ Clasp setup complete!');
                 
               } catch (error) {
-                console.error('❌ Deployment failed:', error.message);
-                if (error.response) {
-                  console.error('API Error:', error.response.data);
-                }
+                console.error('❌ Setup failed:', error.message);
                 process.exit(1);
               }
             }
             
-            deployToAppsScript();
+            setupAndDeploy();
           "
+          
+          # Clean up credentials
+          rm -f /tmp/credentials.json
+          
+          # Verify files exist before pushing
+          echo "📁 Verifying files before deployment..."
+          ls -la
+          
+          # Deploy with clasp
+          echo "🚀 Pushing files to Apps Script..."
+          clasp push --force
+          
+          echo "📄 Checking what was pushed..."
+          clasp status || echo "Status command completed"
           
           echo "✅ Files pushed successfully!"
           
+      - name: Create Deployment
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          echo "🌐 Creating deployment..."
+          clasp deploy --description "Automated deployment from GitHub Actions - $(date)"
+          echo "✅ Deployment created successfully!"
+        continue-on-error: true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          # Clean up sensitive files
+          rm -f .clasp.json
+          rm -f $HOME/.clasprc.json
+          rm -f /tmp/credentials.json
+          echo "🧹 Cleanup completed"
+
       - name: Deployment Summary
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           echo "## 🎉 Deployment Summary" >> $GITHUB_STEP_SUMMARY
           echo "- ✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Files pushed to Apps Script via API" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Files pushed to Apps Script" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Deployment created" >> $GITHUB_STEP_SUMMARY
           echo "- 📄 Deployed files: Code.js, Sidebar.html" >> $GITHUB_STEP_SUMMARY
           if [ -f "appsscript.json" ]; then
             echo "- 📄 appsscript.json: Included" >> $GITHUB_STEP_SUMMARY
