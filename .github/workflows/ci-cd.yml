@@ -45,126 +45,50 @@ jobs:
           fi
 
       # DEPLOY PHASE (Only on push to main, not on PRs)
-      - name: Deploy to Apps Script
+      - name: Install Clasp
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-          SCRIPT_ID: ${{ secrets.SCRIPT_ID }}
-        run: |
+        run: 
           npm install -g @google/clasp
-          npm install googleapis google-auth-library
           
-          # Create temporary credentials file
-          echo '${{ secrets.GOOGLE_CREDENTIALS }}' > /tmp/credentials.json
-          
-          # Setup clasp authentication and deploy
-          node -e "
-            const { GoogleAuth } = require('google-auth-library');
-            const fs = require('fs');
-            const os = require('os');
-            const path = require('path');
-            
-            async function setupAndDeploy() {
-              try {
-                console.log('🔐 Setting up clasp authentication...');
-                
-                // Authenticate with service account
-                const auth = new GoogleAuth({
-                  keyFile: '/tmp/credentials.json',
-                  scopes: [
-                    'https://www.googleapis.com/auth/script.projects',
-                    'https://www.googleapis.com/auth/drive.file',
-                    'https://www.googleapis.com/auth/script.deployments'
-                  ]
-                });
-                
-                const client = await auth.getClient();
-                const tokenResponse = await client.getAccessToken();
-                
-                // Create clasp credentials
-                const claspCredentials = {
-                  access_token: tokenResponse.token,
-                  refresh_token: null,
-                  scope: 'https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/script.deployments',
-                  token_type: 'Bearer',
-                  expiry_date: Date.now() + (3600 * 1000)
-                };
-                
-                // Save clasp credentials
-                const clasprcPath = path.join(os.homedir(), '.clasprc.json');
-                fs.writeFileSync(clasprcPath, JSON.stringify(claspCredentials, null, 2));
-                
-                // Create .clasp.json
-                const claspConfig = {
-                  scriptId: process.env.SCRIPT_ID,
-                  rootDir: './'
-                };
-                fs.writeFileSync('.clasp.json', JSON.stringify(claspConfig, null, 2));
-                
-                // Create .claspignore
-                const claspIgnore = [
-                  '**/**',
-                  '!Code.js',
-                  '!Sidebar.html',
-                  '!appsscript.json'
-                ].join('\n');
-                fs.writeFileSync('.claspignore', claspIgnore);
-                
-                console.log('✅ Clasp setup complete!');
-                
-              } catch (error) {
-                console.error('❌ Setup failed:', error.message);
-                process.exit(1);
-              }
-            }
-            
-            setupAndDeploy();
-          "
-          
-          # Clean up credentials
-          rm -f /tmp/credentials.json
-          
-          # Verify files exist before pushing
-          echo "📁 Verifying files before deployment..."
-          ls -la
-          
-          # Deploy with clasp
-          echo "🚀 Pushing files to Apps Script..."
-          clasp push --force
-          
-          echo "📄 Checking what was pushed..."
-          clasp status || echo "Status command completed"
-          
-          echo "✅ Files pushed successfully!"
-          
-      - name: Create Deployment
+      - name: Create .clasp.json
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          echo "🌐 Creating deployment..."
-          clasp deploy --description "Automated deployment from GitHub Actions - $(date)"
-          echo "✅ Deployment created successfully!"
-        continue-on-error: true
+          cat > .clasp.json << 'EOF'
+          {
+            "scriptId": "${{secrets.SCRIPT_ID}}",
+            "rootDir": "",
+            "scriptExtensions": [
+              ".js",
+              ".gs"
+            ],
+            "htmlExtensions": [
+              ".html"
+            ],
+            "jsonExtensions": [
+              ".json"
+            ],
+            "filePushOrder": [],
+            "skipSubdirectories": false
+          }
+          EOF
+          echo ".clasp.json created"
 
-      - name: Cleanup
-        if: always()
-        run: |
-          # Clean up sensitive files
-          rm -f .clasp.json
-          rm -f $HOME/.clasprc.json
-          rm -f /tmp/credentials.json
-          echo "🧹 Cleanup completed"
-
-      - name: Deployment Summary
+      - name: Create .claspignore
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          echo "## 🎉 Deployment Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Files pushed to Apps Script" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Deployment created" >> $GITHUB_STEP_SUMMARY
-          echo "- 📄 Deployed files: Code.js, Sidebar.html" >> $GITHUB_STEP_SUMMARY
-          if [ -f "appsscript.json" ]; then
-            echo "- 📄 appsscript.json: Included" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- 📄 appsscript.json: Not found (using defaults)" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo "- 🕐 Deployment time: $(date)" >> $GITHUB_STEP_SUMMARY
+          cat > .claspignore << 'EOF'
+          **/**
+          !Code.js
+          !Sidebar.html
+          !appsscript.json
+          EOF
+          echo "✅ .claspignore created"
+          cat .claspignore
+
+      - name: Create .clasprc.json
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: echo '${{secrets.CLASP_CREDENTIALS}}' > ~/.clasprc.json
+
+      - name: Push the code
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: clasp push --force
